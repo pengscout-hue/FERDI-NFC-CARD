@@ -1,5 +1,10 @@
-const { kv } = require('@vercel/kv');
+const { Redis } = require('@upstash/redis');
 const crypto = require('crypto');
+
+const kv = new Redis({
+  url: process.env.KV_REST_API_URL,
+  token: process.env.KV_REST_API_TOKEN
+});
 
 function hashPin(pin) {
   return crypto.createHash('sha256').update(pin).digest('hex');
