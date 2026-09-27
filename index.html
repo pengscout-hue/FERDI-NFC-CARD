@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aktivasi Kartu</title>
+<style>
+  :root{
+    --blue:#1a56ec; --blue-dark:#1546c4; --ink:#14151a; --gray:#6b7280;
+    --border:#e3e5ea; --bg:#f2f3f6;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100vh; background:var(--bg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink); display:flex; align-items:flex-start; justify-content:center;
+    padding:48px 16px;
+  }
+  .card{
+    background:#fff; border-radius:20px; padding:36px 28px; width:100%; max-width:420px;
+    box-shadow:0 1px 3px rgba(0,0,0,.04);
+  }
+  h1{font-size:26px; font-weight:800; margin:0 0 14px;}
+  .sub{color:var(--gray); font-size:15px; line-height:1.5; margin:0 0 26px;}
+  .sub b{color:var(--ink);}
+  label{display:block; font-size:14px; font-weight:600; margin-bottom:8px;}
+  .field{margin-bottom:18px;}
+  input{
+    width:100%; padding:14px 16px; border:1px solid var(--border); border-radius:12px;
+    font-size:15px; color:var(--ink); outline:none;
+  }
+  input:focus{border-color:var(--blue);}
+  .pin-wrap{position:relative;}
+  .pin-wrap input{letter-spacing:4px;}
+  .eye{
+    position:absolute; right:14px; top:50%; transform:translateY(-50%);
+    background:none; border:none; cursor:pointer; color:var(--gray); font-size:18px; padding:4px;
+  }
+  .help{font-size:13px; color:var(--blue); background:none; border:none; padding:0; margin:-10px 0 18px; cursor:pointer; text-decoration:underline;}
+  .help-box{font-size:13px; color:var(--gray); background:#f7f8fa; border-radius:10px; padding:12px 14px; margin:-6px 0 18px; line-height:1.5; display:none;}
+  .btn{
+    width:100%; padding:16px; border:none; border-radius:999px; background:var(--blue);
+    color:#fff; font-size:16px; font-weight:700; cursor:pointer;
+  }
+  .btn:hover{background:var(--blue-dark);}
+  .btn:disabled{background:#a9b6e6; cursor:not-allowed;}
+  .btn.secondary{background:#fff; color:var(--blue); border:1px solid var(--border);}
+  .msg{font-size:14px; margin-top:14px; text-align:center;}
+  .msg.err{color:#d92d20;}
+  .msg.ok{color:#0a8f4d;}
+  .center{text-align:center;}
+  .spinner{
+    width:34px; height:34px; border:3px solid var(--border); border-top-color:var(--blue);
+    border-radius:50%; margin:8px auto 18px; animation:spin 0.8s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .edit-toggle{background:none; border:none; color:var(--gray); font-size:13px; cursor:pointer; display:block; margin:22px auto 0; text-decoration:underline;}
+</style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="center">Memuat…</div>
+  </div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const code = (params.get('code') || '').trim().toUpperCase();
+const cardEl = document.getElementById('card');
+
+function esc(s){ return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+async function api(method, body){
+  const res = await fetch('/api/card' + (method==='GET' ? ('?code='+encodeURIComponent(code)) : ''), {
+    method, headers:{'Content-Type':'application/json'},
+    body: method==='GET' ? undefined : JSON.stringify(body)
+  });
+  const data = await res.json().catch(()=>({}));
+  return { ok: res.ok, status: res.status, data };
+}
+
+function renderNoCode(){
+  cardEl.innerHTML = `<h1>Kode kartu tidak ditemukan</h1>
+    <p class="sub">Buka halaman ini lewat link atau tap kartu NFC yang sudah berisi kode kartu di alamatnya (contoh: <b>?code=3GEBJA</b>).</p>`;
+}
+
+function renderRedirect(businessName, reviewLink){
+  cardEl.innerHTML = `
+    <div class="center">
+      <div class="spinner"></div>
+      <h1 style="font-size:19px;margin-bottom:6px;">${esc(businessName)}</h1>
+      <p class="sub" style="margin-bottom:20px;">Mengalihkan ke Google Review…</p>
+      <button class="btn" id="goBtn">Buka Google Review</button>
+      <button class="edit-toggle" id="editToggle">Ini bisnis saya, ubah data kartu</button>
+    </div>`;
+  document.getElementById('goBtn').onclick = () => location.href = reviewLink;
+  document.getElementById('editToggle').onclick = renderEditForm;
+  setTimeout(() => { location.href = reviewLink; }, 1200);
+}
+
+function renderEditForm(){
+  cardEl.innerHTML = `
+    <h1>Ubah Data Kartu</h1>
+    <p class="sub">Masukkan PIN 4 digit yang dibuat saat aktivasi untuk mengubah nama bisnis atau link ulasan.</p>
+    <form id="editForm">
+      <div class="field"><label>Nama Bisnis</label><input id="ebiz" required></div>
+      ${reviewLinkFieldHtml('elink')}
+      <div class="field"><label>PIN (4 Digit Angka)</label>
+        <div class="pin-wrap"><input id="epin" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" required></div>
+      </div>
+      <button class="btn" type="submit">Simpan Perubahan</button>
+      <div class="msg" id="emsg"></div>
+    </form>`;
+  document.getElementById('editForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const businessName = document.getElementById('ebiz').value.trim();
+    const reviewLink = document.getElementById('elink').value.trim();
+    const pin = document.getElementById('epin').value.trim();
+    const msg = document.getElementById('emsg');
+    msg.textContent = '';
+    if(!/^\d{4}$/.test(pin)){ msg.textContent='PIN harus 4 digit angka.'; msg.className='msg err'; return; }
+    const { ok, data } = await api('PUT', { code, businessName, reviewLink, pin });
+    if(ok){ init(); } else { msg.textContent = data.error || 'PIN salah atau terjadi kesalahan.'; msg.className='msg err'; }
+  };
+}
+
+function reviewLinkFieldHtml(id){
+  return `<div class="field"><label>Link Google Review</label>
+    <input id="${id}" type="url" placeholder="https://g.page/r/xxxxxxx/review" required>
+  </div>
+  <button type="button" class="help" id="helpBtn">Cara mendapatkan link ini</button>
+  <div class="help-box" id="helpBox">
+    Buka Google Maps → cari nama bisnis Anda → tombol <b>Bagikan</b> → salin link, atau
+    di Google Business Profile pilih <b>Minta ulasan</b> → salin link yang muncul.
+  </div>`;
+}
+
+function wireHelp(){
+  const btn = document.getElementById('helpBtn'), box = document.getElementById('helpBox');
+  if(btn) btn.onclick = () => { box.style.display = box.style.display==='block' ? 'none' : 'block'; };
+}
+
+function renderActivation(){
+  cardEl.innerHTML = `
+    <h1>Aktivasi Kartu</h1>
+    <p class="sub">Kode kartu: <b>${esc(code)}</b>. Isi semua kolom di bawah untuk mengaktifkan kartu.</p>
+    <form id="actForm">
+      <div class="field"><label>Nama Bisnis</label><input id="biz" placeholder="Ketik nama bisnis Anda" required></div>
+      ${reviewLinkFieldHtml('link')}
+      <div class="field"><label>Buat PIN (4 Digit Angka)</label>
+        <div class="pin-wrap">
+          <input id="pin" type="password" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" required>
+          <button type="button" class="eye" id="eyeBtn">👁</button>
+        </div>
+      </div>
+      <button class="btn" type="submit" id="submitBtn">Aktifkan Kartu</button>
+      <div class="msg" id="msg"></div>
+    </form>`;
+  wireHelp();
+  document.getElementById('eyeBtn').onclick = () => {
+    const p = document.getElementById('pin');
+    p.type = p.type === 'password' ? 'text' : 'password';
+  };
+  document.getElementById('actForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const businessName = document.getElementById('biz').value.trim();
+    const reviewLink = document.getElementById('link').value.trim();
+    const pin = document.getElementById('pin').value.trim();
+    const msg = document.getElementById('msg');
+    const btn = document.getElementById('submitBtn');
+    msg.textContent = '';
+    if(!/^\d{4}$/.test(pin)){ msg.textContent='PIN harus 4 digit angka.'; msg.className='msg err'; return; }
+    try{ new URL(reviewLink); } catch { msg.textContent='Link ulasan tidak valid.'; msg.className='msg err'; return; }
+    btn.disabled = true; btn.textContent = 'Mengaktifkan…';
+    const { ok, data } = await api('POST', { code, businessName, reviewLink, pin });
+    if(ok){ renderRedirect(businessName, reviewLink); }
+    else{ msg.textContent = data.error || 'Gagal mengaktifkan kartu.'; msg.className='msg err'; btn.disabled=false; btn.textContent='Aktifkan Kartu'; }
+  };
+}
+
+async function init(){
+  if(!code){ renderNoCode(); return; }
+  cardEl.innerHTML = '<div class="center">Memuat…</div>';
+  const { ok, data } = await api('GET');
+  if(ok && data.activated){ renderRedirect(data.businessName, data.reviewLink); }
+  else{ renderActivation(); }
+}
+init();
+</script>
+</body>
+</html>
